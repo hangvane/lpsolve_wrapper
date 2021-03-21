@@ -14,7 +14,7 @@ A python wrapper for the module lp_solve, which provides notation based api.
 We strongly recommend you to install `lpsolve` by `conda`:
 
 ```commandline
-conda install -c rmg lpsolve55
+conda install -c conda-forge lpsolve55
 ```
 
 Then add [lpsolve_wrapper.py](lpsolve_wrapper.py) to your projects.
