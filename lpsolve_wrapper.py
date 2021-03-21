@@ -239,7 +239,7 @@ class Model:
         tmp[np.isposinf(tmp)] = INF
         tmp[np.isneginf(tmp)] = -INF
 
-        print('lpsolve wrapper: creating...')
+        # print('lpsolve wrapper: creating...')
         lp = lp_maker(
             tmp.tolist(),  # n vector of coefficients for a linear objective function
             np.array(self.coef_mat, dtype=np.float32).tolist()  # tolist() when it contains only 1 constraint for debug
@@ -253,11 +253,11 @@ class Model:
             1 if scale else 0,  # Auto scale flag, e.g., 0.499999 -> 0.5. Off when 0 or omitted.
             1 if minimize else 0  # Set maximum lp when this flag equals 0 or omitted.
         )
-        print('lpsolve wrapper: solving...')
+        # print('lpsolve wrapper: solving...')
         lpsolve('solve', lp)
         obj = lpsolve('get_objective', lp)  # Get the optimal objective.
         raw_notation = lpsolve('get_variables', lp)[0]  # Get the 1-d vector of optimal value of notations.
-
+        lpsolve('delete_lp', lp)
         # clean
         for v in self.notations.values():
             v['_mat'].fill(0)
