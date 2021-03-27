@@ -1,13 +1,13 @@
 from collections import Iterable
 
-from lp_maker import lp_maker, lpsolve
 import numpy as np
+from lp_solve import lpsolve, IMPORTANT
 
 INT_TYPE = 1
 FLOAT_TYPE = 0
-EQ = 0
-GEQ = 1
-LEQ = -1
+EQ = 3
+GEQ = 2
+LEQ = 1
 INF = 100000
 
 
@@ -71,22 +71,13 @@ class Model:
         `lw.notation()` is recommended for generation.
         """
 
-        # The coefficient matrix of **the program**, where each element represents the left side of a single constraint.
-        self.coef_mat = []
-
-        # It stores the right side constants of constraints.
-        self.right_values = []
-
-        # Each element = {EQ, GEQ, LEQ} represents the inequality type of a single constraint.
-        self.constr_types = []
-
-        # It stores the indexes of integer notation values in the coefficient matrix of the program (1 based indexes).
-        self.must_be_int = []
+        self.notations = notations
 
         # the number of values that all notations contain
-        self.length = 0
+        length = 0
 
-        self.notations = notations
+        # Stores the indexes of integer notation values in the coefficient matrix of the program (1 based indexes).
+        must_be_int = []
 
         for n in notations:
             # Restore the abbreviated `upper_bound` and `upper_bound` to an array.
@@ -99,16 +90,29 @@ class Model:
             # Init `_mat`, which helps building constraints, and is reinitialized after building.
             self.notations[n]['_mat'] = np.zeros(notations[n]['shape'])
 
-            self.notations[n]['_offset'] = self.length
+            self.notations[n]['_offset'] = length
             self.notations[n]['_length'] = np.prod(notations[n]['shape'])
 
-            self.length += self.notations[n]['_length']
+            length += self.notations[n]['_length']
 
-            if notations[n]['type'] == INT_TYPE:
-                self.must_be_int.extend(
-                    np.arange(self.notations[n]['_length'])
-                    + self.notations[n]['_offset'] + 1
-                )
+            must_be_int.extend(
+                [notations[n]['type'], ] * np.prod(notations[n]['shape'])
+            )
+
+        self.lp = lpsolve('make_lp', 0, length)
+        lpsolve('set_int', self.lp, must_be_int)
+        lpsolve(
+            'set_lowbo',
+            self.lp,
+            np.concatenate([np.ravel(n['lower_bound']) for n in self.notations.values()]).tolist()
+        )
+
+        lpsolve(
+            'set_upbo',
+            self.lp,
+            np.concatenate([np.ravel(n['upper_bound']) for n in self.notations.values()]).tolist()
+        )
+        lpsolve('set_verbose', self.lp, IMPORTANT)
 
     def _post_proc(self, right_value, constr_type):
         """
@@ -119,10 +123,7 @@ class Model:
         :param constr_type : {EQ, LEQ, GEQ}
             The inequality type of the constraint.
         """
-        self.right_values.append(right_value)
-        self.constr_types.append(constr_type)
 
-        # TODO: speed up
         # Flatten the `_mat` of all the notations.
         mats = [n['_mat'].ravel() for n in self.notations.values()]
 
@@ -131,7 +132,7 @@ class Model:
         tmp[np.isposinf(tmp)] = INF
         tmp[np.isneginf(tmp)] = -INF
 
-        self.coef_mat.append(tmp)
+        lpsolve('add_constraint', self.lp, tmp.tolist(), constr_type, right_value)
 
         # Reinitialize `_mat`.
         for n in self.notations.values():
@@ -187,14 +188,15 @@ class Model:
 
         self._post_proc(right_value, constr_type)
 
-    def gen_mat(self):
-        """
-        Return the coefficient mat of **the program**, right side constants, inequality types, integer notation indexes.
-        """
-        return self.coef_mat, \
-               self.right_values, \
-               self.constr_types, \
-               self.must_be_int
+    # TODO: fix
+    # def gen_mat(self):
+    #     """
+    #     Return the coefficient mat of **the program**, right side constants, inequality types, integer notation indexes.
+    #     """
+    #     return self.coef_mat, \
+    #            self.right_values, \
+    #            self.constr_types, \
+    #            self.must_be_int
 
     def reshape_notation(self, raw_notation):
         """
@@ -239,25 +241,16 @@ class Model:
         tmp[np.isposinf(tmp)] = INF
         tmp[np.isneginf(tmp)] = -INF
 
-        # print('lpsolve wrapper: creating...')
-        lp = lp_maker(
-            tmp.tolist(),  # n vector of coefficients for a linear objective function
-            np.array(self.coef_mat, dtype=np.float32).tolist()  # tolist() when it contains only 1 constraint for debug
-            if len(self.coef_mat) == 1 else
-            np.array(self.coef_mat, dtype=np.float32),  # coefficient matrix of constraints
-            self.right_values,  # right side constants
-            self.constr_types,  # inequality types of constraints
-            np.concatenate([np.ravel(n['lower_bound']) for n in self.notations.values()]).tolist(),  # lower bounds
-            np.concatenate([np.ravel(n['upper_bound']) for n in self.notations.values()]).tolist(),  # upper bounds
-            self.must_be_int,  # Vector of integer variables. May be omitted or empty.
-            1 if scale else 0,  # Auto scale flag, e.g., 0.499999 -> 0.5. Off when 0 or omitted.
-            1 if minimize else 0  # Set maximum lp when this flag equals 0 or omitted.
-        )
-        # print('lpsolve wrapper: solving...')
-        lpsolve('solve', lp)
-        obj = lpsolve('get_objective', lp)  # Get the optimal objective.
-        raw_notation = lpsolve('get_variables', lp)[0]  # Get the 1-d vector of optimal value of notations.
-        lpsolve('delete_lp', lp)
+        lpsolve('set_obj_fn', self.lp, tmp.tolist())
+        if minimize:
+            lpsolve('set_minim', self.lp)
+        else:
+            lpsolve('set_maxim', self.lp)
+        lpsolve('set_scaling', self.lp, 1 if scale else 0)
+        lpsolve('solve', self.lp)
+        obj = lpsolve('get_objective', self.lp)  # Get the optimal objective.
+        raw_notation = lpsolve('get_variables', self.lp)[0]  # Get the 1-d vector of optimal value of notations.
+        lpsolve('delete_lp', self.lp)
         # clean
         for v in self.notations.values():
             v['_mat'].fill(0)
