@@ -1,7 +1,7 @@
 from collections import Iterable
 
 import numpy as np
-from lp_solve import lpsolve, IMPORTANT
+from lpsolve55 import lpsolve, IMPORTANT
 
 INT_TYPE = 1
 FLOAT_TYPE = 0
