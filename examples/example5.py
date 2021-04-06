@@ -26,7 +26,7 @@ model = lw.Model(
 for j in [0, 1]:
     model.add_constr_callback(
         callbacks={
-            'x': lambda x: x[:][j].fill(1)
+            'x': lambda x: x[:, j].fill(1)
         },
         right_value=1,
         constr_type=lw.LEQ,
